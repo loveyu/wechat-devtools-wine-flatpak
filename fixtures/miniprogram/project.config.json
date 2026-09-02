@@ -1,0 +1,17 @@
+{
+  "description": "WeChat DevTools Wine/Flatpak smoke test",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": false,
+    "urlCheck": false
+  },
+  "compileType": "miniprogram",
+  "libVersion": "trial",
+  "appid": "touristappid",
+  "projectname": "wine-flatpak-smoke"
+}

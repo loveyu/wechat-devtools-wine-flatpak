@@ -1,0 +1,11 @@
+<view class="container">
+  <view class="title">Wine / Flatpak 验证通过</view>
+  <view class="message">{{message}}</view>
+  <input
+    class="input"
+    placeholder="在此测试 Fcitx5 中文输入"
+    value="{{inputValue}}"
+    bindinput="onInput"
+  />
+  <view class="result">输入内容：{{inputValue}}</view>
+</view>

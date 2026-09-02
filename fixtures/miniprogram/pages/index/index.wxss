@@ -1,0 +1,24 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 32rpx;
+}
+
+.title {
+  color: #07c160;
+  font-size: 42rpx;
+  font-weight: 600;
+}
+
+.message,
+.result {
+  font-size: 30rpx;
+  line-height: 1.6;
+}
+
+.input {
+  border: 2rpx solid #d8d8d8;
+  border-radius: 12rpx;
+  background: white;
+  padding: 20rpx;
+}

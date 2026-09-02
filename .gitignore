@@ -1,0 +1,12 @@
+/artifacts/
+/dist/
+/workspace/
+/.local/
+*.exe
+*.msi
+*.log
+*.status
+*.lock
+__pycache__/
+*.py[cod]
+*~
