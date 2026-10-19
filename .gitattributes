@@ -1,1 +1,6 @@
-*.patch -whitespace
+* text=auto eol=lf
+*.patch text eol=lf -whitespace
+*.sh text eol=lf
+*.service text eol=lf
+*.png binary
+*.exe binary
