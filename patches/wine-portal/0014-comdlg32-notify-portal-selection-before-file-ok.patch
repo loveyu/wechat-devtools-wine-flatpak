@@ -1,0 +1,85 @@
+From 7ee8a9ebd1af07f9177410056ff1c6caf586f466 Mon Sep 17 00:00:00 2001
+From: loveyu <i@loveyu.info>
+Date: Tue, 1 Sep 2026 17:42:00 +0800
+Subject: [PATCH] comdlg32: notify portal selection before file ok
+
+Applications using IFileDialogEvents can consume the selected items from
+OnSelectionChange and only use OnFileOk to commit previously cached state.
+The portal path populated psia_results and emitted OnFileOk directly, leaving
+GetCurrentSelection and IFileOpenDialog::GetSelectedItems empty during the
+callback sequence.  WeCom consequently ignored an otherwise valid document
+portal path and released the dialog without calling GetResult.
+
+Mirror the native dialog sequence after a successful portal response: expose
+the result array as the current selection, update the filename, then emit
+OnFolderChange and OnSelectionChange before OnFileOk.  Keep separate array
+references because selection and final results have independent lifetimes in
+the normal dialog implementation.
+---
+ dlls/comdlg32/itemdlg.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/dlls/comdlg32/itemdlg.c b/dlls/comdlg32/itemdlg.c
+index dbe97b8f3e8..5bd8ca6d3c2 100644
+--- a/dlls/comdlg32/itemdlg.c
++++ b/dlls/comdlg32/itemdlg.c
+@@ -2873,6 +2873,25 @@ static enum portal_policy get_portal_policy(void)
+     return PORTAL_POLICY_AUTO;
+ }
+ 
++static void notify_portal_selection(FileDialogImpl *This)
++{
++    if (This->psia_selection)
++    {
++        IShellItemArray_Release(This->psia_selection);
++        This->psia_selection = NULL;
++    }
++
++    events_OnFolderChange(This);
++
++    if (!This->psia_results)
++        return;
++
++    This->psia_selection = This->psia_results;
++    IShellItemArray_AddRef(This->psia_selection);
++    fill_filename_from_selection(This);
++    events_OnSelectionChange(This);
++}
++
+ static HRESULT try_portal_itemdlg(FileDialogImpl *This, HWND hwndOwner)
+ {
+     struct portal_open_file_params open_params = {0};
+@@ -2940,6 +2959,7 @@ static HRESULT try_portal_itemdlg(FileDialogImpl *This, HWND hwndOwner)
+                     const WCHAR *title = file_part_from_path(single_paths[0]);
+                     set_file_name(This, (title && *title) ? title : single_paths[0]);
+                     set_result_folder(This, single_paths[0]);
++                    notify_portal_selection(This);
+                     hr = events_OnFileOk(This);
+                 }
+             }
+@@ -2980,6 +3000,7 @@ static HRESULT try_portal_itemdlg(FileDialogImpl *This, HWND hwndOwner)
+                             const WCHAR *title = file_part_from_path(paths[0]);
+                             set_file_name(This, (title && *title) ? title : paths[0]);
+                             set_result_folder(This, dir_str);
++                            notify_portal_selection(This);
+                             hr = events_OnFileOk(This);
+                         }
+                     }
+@@ -3005,6 +3026,7 @@ static HRESULT try_portal_itemdlg(FileDialogImpl *This, HWND hwndOwner)
+                         const WCHAR *title = file_part_from_path(paths[0]);
+                         set_file_name(This, (title && *title) ? title : paths[0]);
+                         set_result_folder(This, paths[0]);
++                        notify_portal_selection(This);
+                         hr = events_OnFileOk(This);
+                     }
+                 }
+@@ -3158,6 +3180,7 @@ static HRESULT try_portal_itemdlg(FileDialogImpl *This, HWND hwndOwner)
+             set_file_name(This, save_params.result_path);
+             set_result_folder(This, save_params.result_path);
+             cache_portal_result(This, save_params.result_path);
++            notify_portal_selection(This);
+             /* Fire OnFileOk so apps see the choice immediately */
+             hr = events_OnFileOk(This);
+             /* If app rejected (S_FALSE), surface cancel; if we lack results, fail to avoid legacy fallback */
+-- 
+2.51.0

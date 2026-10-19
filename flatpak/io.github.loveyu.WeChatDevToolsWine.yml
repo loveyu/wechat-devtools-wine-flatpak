@@ -1,0 +1,55 @@
+# 历史 Staging 的依赖和版本来源记录。当前默认共享 Deepin 应用层使用
+# ../scripts/build-deepin-runner.sh，不使用此清单。Staging 的权威构建入口是
+# ../scripts/build-staging-runner.sh；该脚本应用完整 Wine Staging
+# 补丁集并使用 Wine 新 WoW64 模式生成用户级 Flatpak runner：Unix
+# 侧只依赖 x86-64，Windows PE 侧同时包含 i386/x86-64。
+id: io.github.loveyu.WeChatDevToolsWine
+default-branch: staging-25.08
+sdk: org.freedesktop.Sdk
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+command: wine
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --talk-name=org.freedesktop.FileManager1
+  # 仅放行新 WoW64 执行 Win32 PE 所需的 seccomp 系统调用；不挂载
+  # org.freedesktop.Platform.Compat.i386，Unix 侧仍为纯 x86-64。
+  - --allow=multiarch
+  - --filesystem=xdg-download/WeChatDevTools:create
+  - --env=WINEPREFIX=/var/data/wine-wechat-devtools
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.mingw-w64
+modules:
+  - name: wine-staging-new-wow64
+    config-opts:
+      - --enable-archs=i386,x86_64
+      - --disable-winemenubuilder
+      - --disable-tests
+      - --without-opencl
+    sources:
+      - type: archive
+        url: https://dl.winehq.org/wine/source/11.x/wine-11.17.tar.xz
+        sha256: 8e752e29bba2901ad9f915139345c6ee67184b099d425704d915971ca5c055fc
+      - type: archive
+        url: https://gitlab.winehq.org/wine/wine-staging/-/archive/v11.17/wine-staging-v11.17.tar.gz
+        sha256: 8bbee364a66a97da5ac12e7c64b959537da8e424f46acb08f5384e130ea6ca2d
+      - type: patch
+        path: ../patches/wine-portal/0001-comdlg32-add-XDG-desktop-portal-backend-for-file-dia.patch
+      - type: patch
+        path: ../patches/wine-portal/0002-comdlg32-route-IFileDialog-through-portal-when-compa.patch
+      - type: patch
+        path: ../patches/wine-portal/0005-shell32-route-SHBrowseForFolderW-through-portal-when.patch
+      - type: patch
+        path: ../patches/wine-portal/0006-comdlg32-avoid-MAX_PATH-truncation-for-portal-items.patch
+      - type: patch
+        path: ../patches/wine-portal/0007-comdlg32-handle-desktop-folder-initialization-failur.patch
+      - type: patch
+        path: ../patches/wine-portal/0014-comdlg32-notify-portal-selection-before-file-ok.patch
+      - type: patch
+        path: ../patches/wine-portal/0016-comdlg32-expose-portal-results-through-folder-view.patch
+      - type: patch
+        path: ../patches/wine-portal/0017-explorer-route-select-through-host-file-manager.patch

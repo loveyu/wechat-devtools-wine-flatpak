@@ -27,7 +27,7 @@ if [[ -n "${instance_id}" ]] && \
         "XDG_CACHE_HOME=${CACHE_DIR}" \
         "PATH=/app/bin:/usr/bin" \
         "WINEPREFIX=${WINEPREFIX_HOST}" \
-        "WINEARCH=win64" \
+        "WINEARCH=${WINEARCH_VALUE}" \
         "WINEDEBUG=${WINEDEBUG_VALUE:--all}" \
         "LANG=zh_CN.UTF-8" \
         "LC_ALL=zh_CN.UTF-8" \

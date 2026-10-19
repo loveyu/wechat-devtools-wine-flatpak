@@ -1,0 +1,245 @@
+From 5306d9e9553810f6d8baee93207568b26031cf16 Mon Sep 17 00:00:00 2001
+From: loveyu <i@loveyu.info>
+Date: Tue, 1 Sep 2026 19:05:00 +0800
+Subject: [PATCH] comdlg32: expose portal results through a folder view
+
+Some applications do not consume IFileOpenDialog results directly. Their
+IFileDialogEvents sink obtains SID_STopLevelBrowser during OnFolderChange,
+queries the active shell view for IFolderView2, and later reads the selection
+from that view in OnFileOk.  The portal path has no ExplorerBrowser, so this
+chain returned E_NOTIMPL and those applications silently ignored the portal
+selection.
+
+Expose a small, result-only shell browser/view while portal results exist.
+It implements only the interfaces and methods needed to read the selected
+IShellItemArray and folder flags; the regular dialog continues to use its real
+ExplorerBrowser.
+---
+ dlls/comdlg32/itemdlg.c | 190 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 190 insertions(+)
+
+diff --git a/dlls/comdlg32/itemdlg.c b/dlls/comdlg32/itemdlg.c
+index eea1bdac3aa..f167bb12e61 100644
+--- a/dlls/comdlg32/itemdlg.c
++++ b/dlls/comdlg32/itemdlg.c
+@@ -120,6 +120,9 @@ typedef struct FileDialogImpl {
+     ICommDlgBrowser3       ICommDlgBrowser3_iface;
+     IOleWindow             IOleWindow_iface;
+     IFileDialogCustomize   IFileDialogCustomize_iface;
++    IShellBrowser          portal_shell_browser_iface;
++    IShellView             portal_shell_view_iface;
++    IFolderView2           portal_folder_view_iface;
+     LONG ref;
+ 
+     FILEOPENDIALOGOPTIONS options;
+@@ -4315,6 +4318,188 @@ static const IExplorerBrowserEventsVtbl vt_IExplorerBrowserEvents = {
+     IExplorerBrowserEvents_fnOnNavigationFailed
+ };
+ 
++/**************************************************************************
++ * Result-only shell browser used by the portal path.
++ */
++static inline FileDialogImpl *impl_from_portal_shell_browser(IShellBrowser *iface)
++{
++    return CONTAINING_RECORD(iface, FileDialogImpl, portal_shell_browser_iface);
++}
++
++static inline FileDialogImpl *impl_from_portal_shell_view(IShellView *iface)
++{
++    return CONTAINING_RECORD(iface, FileDialogImpl, portal_shell_view_iface);
++}
++
++static inline FileDialogImpl *impl_from_portal_folder_view(IFolderView2 *iface)
++{
++    return CONTAINING_RECORD(iface, FileDialogImpl, portal_folder_view_iface);
++}
++
++static HRESULT WINAPI portal_shell_browser_QueryInterface(IShellBrowser *iface,
++                                                           REFIID riid, void **ppv)
++{
++    FileDialogImpl *This = impl_from_portal_shell_browser(iface);
++
++    if (!ppv) return E_POINTER;
++    *ppv = NULL;
++    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IOleWindow) ||
++        IsEqualIID(riid, &IID_IShellBrowser))
++        *ppv = &This->portal_shell_browser_iface;
++    if (!*ppv) return E_NOINTERFACE;
++    IFileDialog2_AddRef(&This->IFileDialog2_iface);
++    return S_OK;
++}
++
++static ULONG WINAPI portal_shell_browser_AddRef(IShellBrowser *iface)
++{
++    FileDialogImpl *This = impl_from_portal_shell_browser(iface);
++    return IFileDialog2_AddRef(&This->IFileDialog2_iface);
++}
++
++static ULONG WINAPI portal_shell_browser_Release(IShellBrowser *iface)
++{
++    FileDialogImpl *This = impl_from_portal_shell_browser(iface);
++    return IFileDialog2_Release(&This->IFileDialog2_iface);
++}
++
++static HRESULT WINAPI portal_shell_browser_GetWindow(IShellBrowser *iface, HWND *hwnd)
++{
++    FileDialogImpl *This = impl_from_portal_shell_browser(iface);
++    if (!hwnd) return E_POINTER;
++    *hwnd = This->dlg_hwnd;
++    return S_OK;
++}
++
++static HRESULT WINAPI portal_shell_browser_QueryActiveShellView(IShellBrowser *iface,
++                                                                 IShellView **view)
++{
++    FileDialogImpl *This = impl_from_portal_shell_browser(iface);
++    if (!view) return E_POINTER;
++    *view = &This->portal_shell_view_iface;
++    IShellView_AddRef(*view);
++    return S_OK;
++}
++
++static const IShellBrowserVtbl portal_shell_browser_vtbl = {
++    .QueryInterface = portal_shell_browser_QueryInterface,
++    .AddRef = portal_shell_browser_AddRef,
++    .Release = portal_shell_browser_Release,
++    .GetWindow = portal_shell_browser_GetWindow,
++    .QueryActiveShellView = portal_shell_browser_QueryActiveShellView,
++};
++
++static HRESULT WINAPI portal_shell_view_QueryInterface(IShellView *iface,
++                                                        REFIID riid, void **ppv)
++{
++    FileDialogImpl *This = impl_from_portal_shell_view(iface);
++
++    if (!ppv) return E_POINTER;
++    *ppv = NULL;
++    if (IsEqualIID(riid, &IID_IFolderView) || IsEqualIID(riid, &IID_IFolderView2))
++        *ppv = &This->portal_folder_view_iface;
++    else if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IOleWindow) ||
++             IsEqualIID(riid, &IID_IShellView))
++        *ppv = &This->portal_shell_view_iface;
++    if (!*ppv) return E_NOINTERFACE;
++    IFileDialog2_AddRef(&This->IFileDialog2_iface);
++    return S_OK;
++}
++
++static ULONG WINAPI portal_shell_view_AddRef(IShellView *iface)
++{
++    FileDialogImpl *This = impl_from_portal_shell_view(iface);
++    return IFileDialog2_AddRef(&This->IFileDialog2_iface);
++}
++
++static ULONG WINAPI portal_shell_view_Release(IShellView *iface)
++{
++    FileDialogImpl *This = impl_from_portal_shell_view(iface);
++    return IFileDialog2_Release(&This->IFileDialog2_iface);
++}
++
++static HRESULT WINAPI portal_shell_view_GetWindow(IShellView *iface, HWND *hwnd)
++{
++    FileDialogImpl *This = impl_from_portal_shell_view(iface);
++    if (!hwnd) return E_POINTER;
++    *hwnd = This->dlg_hwnd;
++    return S_OK;
++}
++
++static const IShellViewVtbl portal_shell_view_vtbl = {
++    .QueryInterface = portal_shell_view_QueryInterface,
++    .AddRef = portal_shell_view_AddRef,
++    .Release = portal_shell_view_Release,
++    .GetWindow = portal_shell_view_GetWindow,
++};
++
++static HRESULT WINAPI portal_folder_view_QueryInterface(IFolderView2 *iface,
++                                                         REFIID riid, void **ppv)
++{
++    FileDialogImpl *This = impl_from_portal_folder_view(iface);
++
++    if (!ppv) return E_POINTER;
++    *ppv = NULL;
++    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IFolderView) ||
++        IsEqualIID(riid, &IID_IFolderView2))
++        *ppv = &This->portal_folder_view_iface;
++    if (!*ppv) return E_NOINTERFACE;
++    IFileDialog2_AddRef(&This->IFileDialog2_iface);
++    return S_OK;
++}
++
++static ULONG WINAPI portal_folder_view_AddRef(IFolderView2 *iface)
++{
++    FileDialogImpl *This = impl_from_portal_folder_view(iface);
++    return IFileDialog2_AddRef(&This->IFileDialog2_iface);
++}
++
++static ULONG WINAPI portal_folder_view_Release(IFolderView2 *iface)
++{
++    FileDialogImpl *This = impl_from_portal_folder_view(iface);
++    return IFileDialog2_Release(&This->IFileDialog2_iface);
++}
++
++static HRESULT WINAPI portal_folder_view_SetCurrentFolderFlags(IFolderView2 *iface,
++                                                                DWORD mask, DWORD flags)
++{
++    TRACE("%p mask %#lx flags %#lx\n", impl_from_portal_folder_view(iface), mask, flags);
++    return S_OK;
++}
++
++static HRESULT WINAPI portal_folder_view_GetCurrentFolderFlags(IFolderView2 *iface,
++                                                                DWORD *flags)
++{
++    if (!flags) return E_POINTER;
++    *flags = 0;
++    return S_OK;
++}
++
++static HRESULT WINAPI portal_folder_view_GetSelection(IFolderView2 *iface,
++                                                       BOOL none_implies_folder,
++                                                       IShellItemArray **array)
++{
++    FileDialogImpl *This = impl_from_portal_folder_view(iface);
++    IShellItemArray *selection = This->psia_selection ? This->psia_selection : This->psia_results;
++
++    TRACE("%p none_implies_folder %d selection %p\n", This, none_implies_folder, selection);
++    if (!array) return E_POINTER;
++    *array = NULL;
++    if (!selection) return E_FAIL;
++    IShellItemArray_AddRef(selection);
++    *array = selection;
++    return S_OK;
++}
++
++static const IFolderView2Vtbl portal_folder_view_vtbl = {
++    .QueryInterface = portal_folder_view_QueryInterface,
++    .AddRef = portal_folder_view_AddRef,
++    .Release = portal_folder_view_Release,
++    .SetCurrentFolderFlags = portal_folder_view_SetCurrentFolderFlags,
++    .GetCurrentFolderFlags = portal_folder_view_GetCurrentFolderFlags,
++    .GetSelection = portal_folder_view_GetSelection,
++};
++
+ /**************************************************************************
+  * IServiceProvider implementation
+  */
+@@ -4330,7 +4515,9 @@ static HRESULT WINAPI IServiceProvider_fnQueryService(IServiceProvider *iface,
+ 
+     *ppv = NULL;
+     if(IsEqualGUID(guidService, &SID_STopLevelBrowser) && This->peb)
+         hr = IExplorerBrowser_QueryInterface(This->peb, riid, ppv);
++    else if(IsEqualGUID(guidService, &SID_STopLevelBrowser) && This->psia_results)
++        hr = IShellBrowser_QueryInterface(&This->portal_shell_browser_iface, riid, ppv);
+     else if(IsEqualGUID(guidService, &SID_SExplorerBrowserFrame))
+         hr = IFileDialog2_QueryInterface(&This->IFileDialog2_iface, riid, ppv);
+     else
+@@ -5511,6 +5698,9 @@ static HRESULT FileDialog_constructor(IUnknown *pUnkOuter, REFIID riid, void **p
+     fdimpl->ICommDlgBrowser3_iface.lpVtbl = &vt_ICommDlgBrowser3;
+     fdimpl->IOleWindow_iface.lpVtbl = &vt_IOleWindow;
+     fdimpl->IFileDialogCustomize_iface.lpVtbl = &vt_IFileDialogCustomize;
++    fdimpl->portal_shell_browser_iface.lpVtbl = &portal_shell_browser_vtbl;
++    fdimpl->portal_shell_view_iface.lpVtbl = &portal_shell_view_vtbl;
++    fdimpl->portal_folder_view_iface.lpVtbl = &portal_folder_view_vtbl;
+ 
+     if(type == ITEMDLG_TYPE_OPEN)
+     {
+-- 
+2.51.0

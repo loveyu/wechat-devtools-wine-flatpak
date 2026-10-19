@@ -1,0 +1,16 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=微信开发者工具（Wine）
+Name[en]=WeChat DevTools (Wine)
+GenericName=小程序开发工具
+Comment=通过共享 Deepin Wine 运行 Windows 微信开发者工具
+Keywords=WeChat;Weixin;Mini Program;DevTools;IDE;Wine;
+Keywords[zh_CN]=微信;微信开发者工具;小程序;开发工具;IDE;Wine;
+Exec=wechat-devtools-wine
+TryExec=wechat-devtools-wine
+Icon=io.github.loveyu.WeChatDevToolsWine
+Terminal=false
+Categories=Development;IDE;
+StartupNotify=true
+StartupWMClass=wechat-devtools-wine

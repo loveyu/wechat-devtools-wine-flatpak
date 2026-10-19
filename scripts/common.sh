@@ -9,22 +9,53 @@ XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
 
 APP_SLUG="wechat-devtools-wine-flatpak"
+SCALE_FACTOR_OVERRIDE="${WECHAT_DEVTOOLS_SCALE_FACTOR:-${DEVTOOLS_SCALE_FACTOR:-}}"
+WINEDLLOVERRIDES_VALUE="${WECHAT_DEVTOOLS_WINEDLLOVERRIDES:-mscoree,mshtml=}"
+
+DEEPIN_RUNNER_APP="io.github.loveyu.WeChatDevToolsWine"
+DEEPIN_RUNNER_BRANCH="stable-25.08"
+SHARED_WINE_ID="io.github.loveyu.Wine.Deepin"
+SHARED_WINE_BRANCH="10.14deepin11-25.08"
+BASELINE_RUNNER_APP="io.github.huzhiyu.WeComWine"
+BASELINE_RUNNER_BRANCH="stable-25.08"
+STAGING_RUNNER_APP="io.github.loveyu.WeChatDevToolsWine"
+STAGING_RUNNER_BRANCH="staging-25.08"
+RUNNER_VARIANT="${WECHAT_DEVTOOLS_RUNNER_VARIANT:-deepin}"
+case "${RUNNER_VARIANT}" in
+    deepin)
+        APP_SLUG+="-deepin"
+        RUNNER_APP="${DEEPIN_RUNNER_APP}"
+        RUNNER_BRANCH="${DEEPIN_RUNNER_BRANCH}"
+        WINEARCH_VALUE="win64"
+        ;;
+    baseline)
+        RUNNER_APP="${BASELINE_RUNNER_APP}"
+        RUNNER_BRANCH="${BASELINE_RUNNER_BRANCH}"
+        WINEARCH_VALUE="win64"
+        ;;
+    staging)
+        APP_SLUG+="-staging"
+        RUNNER_APP="${STAGING_RUNNER_APP}"
+        RUNNER_BRANCH="${STAGING_RUNNER_BRANCH}"
+        WINEARCH_VALUE="wow64"
+        ;;
+    *)
+        printf '不支持的 Wine runner：%s\n' "${RUNNER_VARIANT}" >&2
+        exit 64
+        ;;
+esac
+RUNNER_REF="${RUNNER_APP}//${RUNNER_BRANCH}"
 DATA_DIR="${WECHAT_DEVTOOLS_DATA_DIR:-${XDG_DATA_HOME}/${APP_SLUG}}"
 STATE_DIR="${WECHAT_DEVTOOLS_STATE_DIR:-${XDG_STATE_HOME}/${APP_SLUG}}"
 CACHE_DIR="${WECHAT_DEVTOOLS_CACHE_DIR:-${XDG_CACHE_HOME}/${APP_SLUG}}"
 LOG_DIR="${STATE_DIR}/logs"
 WINEPREFIX_HOST="${DATA_DIR}/wine-prefix"
 WORKSPACE_DIR="${DATA_DIR}/workspace"
-SCALE_FACTOR_OVERRIDE="${WECHAT_DEVTOOLS_SCALE_FACTOR:-${DEVTOOLS_SCALE_FACTOR:-}}"
 
-RUNNER_APP="io.github.huzhiyu.WeComWine"
-RUNNER_BRANCH="stable-25.08"
-RUNNER_REF="${RUNNER_APP}//${RUNNER_BRANCH}"
-
-DEVTOOLS_VERSION="2.02.2608050"
+DEVTOOLS_VERSION="2.02.2608070"
 DEVTOOLS_INSTALLER="wechat_devtools_${DEVTOOLS_VERSION}_win32_x64.exe"
-DEVTOOLS_URL="https://dldir1.qq.com/WechatWebDev/release/be1ec64cf6184b0fa64091919793f068/${DEVTOOLS_INSTALLER}"
-DEVTOOLS_SHA256="34082f779984e1f5654f7e99f7fbaa7402af0e4c3c9574d8441778429069daab"
+DEVTOOLS_URL="https://devtools.wxqcloud.qq.com.cn/WechatWebDev/release/be1ec64cf6184b0fa64091919793f068/${DEVTOOLS_INSTALLER}"
+DEVTOOLS_SHA256="a502dead2e4fb6dcb0b5e157e1f2b9ac00c10a20f1940917112a1f8481ed5ed9"
 DEVTOOLS_INSTALLER_HOST="${CACHE_DIR}/${DEVTOOLS_INSTALLER}"
 
 mkdir -p "${DATA_DIR}" "${STATE_DIR}" "${CACHE_DIR}" "${LOG_DIR}" \
@@ -38,6 +69,16 @@ write_status() {
         printf 'stage=%s\n' "${stage}"
         printf 'detail=%s\n' "${detail}"
     } > "${STATE_DIR}/app.status"
+}
+
+rotate_log() {
+    local log_file="$1"
+    local max_bytes="${2:-52428800}"
+
+    if [[ -f "${log_file}" ]] && (( $(stat -c '%s' "${log_file}") > max_bytes )); then
+        mv -f "${log_file}.1" "${log_file}.2" 2>/dev/null || true
+        mv -f "${log_file}" "${log_file}.1"
+    fi
 }
 
 load_desktop_environment() {
@@ -104,11 +145,36 @@ scale_factor_to_wine_dpi() {
     LC_ALL=C awk -v scale="$1" 'BEGIN { printf "%d\n", int(scale * 96 + 0.5) }'
 }
 
+electron_compatibility_args() {
+    local argument has_angle=0 has_no_sandbox=0
+
+    [[ "${RUNNER_VARIANT}" == deepin ]] || return 0
+    for argument in "$@"; do
+        case "${argument}" in
+            --use-angle=*|--use-gl=*) has_angle=1 ;;
+            --no-sandbox) has_no_sandbox=1 ;;
+        esac
+    done
+    # Deepin Wine 10 无法启动 Electron 36 的沙箱 GPU 进程；显式选择 D3D11
+    # 避开其 SwiftShader/Vulkan 初始化失败，外层仍由 Flatpak 隔离。
+    if (( ! has_no_sandbox )); then printf '%s\n' --no-sandbox; fi
+    if (( ! has_angle )); then printf '%s\n' --use-angle=d3d11; fi
+    return 0
+}
+
 flatpak_wine() {
     local command_name="$1"
+    local -a extra_environment=()
     shift
 
     load_desktop_environment
+
+    if [[ -n "${PORTAL_SMOKE_TIMEOUT_MS:-}" ]]; then
+        extra_environment+=(--env="PORTAL_SMOKE_TIMEOUT_MS=${PORTAL_SMOKE_TIMEOUT_MS}")
+    fi
+    if [[ -n "${WINE_FORCE_PORTAL:-}" ]]; then
+        extra_environment+=(--env="WINE_FORCE_PORTAL=${WINE_FORCE_PORTAL}")
+    fi
 
     flatpak run \
         --user \
@@ -120,13 +186,15 @@ flatpak_wine() {
         --filesystem="${WORKSPACE_DIR}" \
         --filesystem="${PROJECT_DIR}:ro" \
         --env="WINEPREFIX=${WINEPREFIX_HOST}" \
-        --env="WINEARCH=win64" \
+        --env="WINEARCH=${WINEARCH_VALUE}" \
         --env="LANG=zh_CN.UTF-8" \
         --env="LC_ALL=zh_CN.UTF-8" \
         --env="XMODIFIERS=@im=fcitx" \
         --env="GTK_IM_MODULE=fcitx" \
         --env="QT_IM_MODULE=fcitx" \
+        --env="WINEDLLOVERRIDES=${WINEDLLOVERRIDES_VALUE}" \
         --env="WINEDEBUG=${WINEDEBUG_VALUE:--all}" \
+        "${extra_environment[@]}" \
         --command="${command_name}" \
         "${RUNNER_APP}" "$@"
 }

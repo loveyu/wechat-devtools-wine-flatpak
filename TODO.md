@@ -1,7 +1,25 @@
 # 微信开发者工具 Wine 验收 TODO
 
+- [x] 默认切换为与企业微信共用的 Deepin Wine 10.14deepin11 独立基础包。
+- [x] 应用层仅引用共享引擎，迁移时复制旧 Staging 前缀并保留回退数据。
+- [x] 修复 Electron 36 在 Deepin Wine 10 的沙箱 GPU 启动与 ANGLE 初始化失败。
+- [x] 共享 Deepin 基础包 Portal 冒烟通过，OpenFile=5、SaveFile=3。
+- [x] 共享 Deepin 基础包恢复原登录态，真实项目编辑器与模拟器正常渲染。
+- [ ] 在共享 Deepin 基础包上完成中文输入、预览和上传回归。
 - [x] 建立独立项目、缓存、状态和 Wine 前缀。
+- [x] 固定 Wine 11.17 与 Wine Staging v11.17 源码及 SHA-256。
+- [x] 使用 new WoW64 构建独立 `io.github.loveyu.WeChatDevToolsWine` runner。
+- [x] 接入 XDG Portal 文件、保存、目录选择与宿主文件管理器转发。
+- [x] Portal 冒烟覆盖 Win32 A/W、IFileDialog、SHBrowseForFolderW 和 hook，结果 Open=5、Save=3。
+- [x] 禁用项目不需要的 Wine Mono/Gecko 首次安装提示。
+- [x] 在 Wine 11.17 Staging 上启动登录/游客界面，确认 150% 缩放与非黑屏渲染。
+- [x] 在 Wine 11.17 Staging 上完成真实扫码、动态状态同步和冷启动登录态恢复。
+- [x] `/data` 仅通过本机 Flatpak override 授权，不写入清单和发布包。
 - [x] 固定腾讯官方 Windows x64 下载地址、版本和 SHA-256。
+- [x] 覆盖升级到 Stable `2.02.2608070`，确认登录态保留、兼容修复匹配并正常启动。
+- [x] 安装 KDE/GNOME 启动菜单与用户级图标，重复点击只激活已有实例。
+- [x] 修复 Electron 36 GPU 合成初始化失败导致的菜单启动黑屏，并收拢早期残留实例。
+- [x] 关闭独立 Wine 前缀的额外窗口装饰，避免最大化/全屏时系统标题栏遮挡内容。
 - [x] 安装微信开发者工具。
 - [x] 启动登录/游客模式窗口并确认基础渲染。
 - [x] 确认 Electron/Chromium/Node 子进程没有持续崩溃。
@@ -18,5 +36,6 @@
 - [x] 冷启动验证真实账号登录状态可从独立 Wine 前缀恢复，无需再次扫码。
 - [x] 验证退出后 Flatpak/Wine 进程可清理，且不影响企业微信实例。
 - [ ] 切换到真实 AppID 项目并验证项目设置、预览和上传。
+- [ ] 在 Wine 11.17 Staging 上回归游客项目和中文输入。
 
 会议摄像头、屏幕共享不适用于本项目。

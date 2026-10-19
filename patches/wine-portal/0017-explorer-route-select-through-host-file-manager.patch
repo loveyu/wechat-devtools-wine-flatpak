@@ -1,0 +1,66 @@
+From 7ebfa1dd7882826ab96ef060572379740157a1b2 Mon Sep 17 00:00:00 2001
+From: huzhiyu <huzhiyu@users.noreply.github.com>
+Date: Thu, 3 Sep 2026 18:20:00 +0800
+Subject: [PATCH] explorer: route /select through host file manager
+
+Wine's Explorer window is not useful for files stored either in the Flatpak
+Wine prefix or granted through the document portal. Give the launcher a chance
+to hand /select requests on the C: and Z: drives to the host desktop while
+preserving the normal Explorer implementation as the fallback.
+
+diff --git a/programs/explorer/explorer.c b/programs/explorer/explorer.c
+index c84628f..78be59e 100644
+--- a/programs/explorer/explorer.c
++++ b/programs/explorer/explorer.c
+@@ -832,6 +832,39 @@ static void copy_path_root(LPWSTR root, LPWSTR path)
+     root[i] = 0;
+ }
+ 
++static BOOL open_host_selection(const WCHAR *selection)
++{
++    static const WCHAR scheme[] = L"wechat-devtools-select:";
++    static const WCHAR winebrowser[] = L"C:\\windows\\system32\\winebrowser.exe";
++    WCHAR uri[2048], parameters[2052];
++    DWORD uri_len;
++
++    /* C: is the private Flatpak prefix; Z: covers host/portal paths. */
++    if ((selection[0] != 'C' && selection[0] != 'c' &&
++         selection[0] != 'Z' && selection[0] != 'z') || selection[1] != ':')
++        return FALSE;
++
++    lstrcpyW(uri, scheme);
++    uri_len = ARRAY_SIZE(uri) - lstrlenW(scheme);
++    if (FAILED(UrlCreateFromPathW(selection, uri + lstrlenW(scheme),
++                                  &uri_len, 0)))
++    {
++        WARN("Could not create host selection URI for %s\n", debugstr_w(selection));
++        return FALSE;
++    }
++
++    if (swprintf(parameters, ARRAY_SIZE(parameters), L"\"%s\"", uri) < 0)
++        return FALSE;
++
++    if ((INT_PTR)ShellExecuteW(NULL, NULL, winebrowser, parameters, NULL,
++                               SW_HIDE) <= 32)
++    {
++        WARN("Could not launch host file manager for %s\n", debugstr_w(selection));
++        return FALSE;
++    }
++    return TRUE;
++}
++
+ /*
+  * Command Line parameters are:
+  * [/n]  Opens in single-paned view for each selected items. This is default
+@@ -924,6 +957,9 @@ int WINAPI wWinMain(HINSTANCE hinstance,
+     memset(&parameters,0,sizeof(parameters));
+     explorer_hInstance = hinstance;
+     parse_command_line(cmdline,&parameters);
++    if (parameters.selection[0] && open_host_selection(parameters.selection))
++        ExitProcess(EXIT_SUCCESS);
++
+     hres = OleInitialize(NULL);
+     if(FAILED(hres))
+     {
+-- 
+2.51.0

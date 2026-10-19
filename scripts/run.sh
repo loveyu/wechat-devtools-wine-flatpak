@@ -12,6 +12,7 @@ LOG_FILE="${LOG_DIR}/app.log"
 LOCK_FILE="${STATE_DIR}/app.lock"
 exec 9> "${LOCK_FILE}"
 flock -n 9 || exit 75
+rotate_log "${LOG_FILE}"
 exec >> "${LOG_FILE}" 2>&1
 
 [[ -s "${PROGRAM_FILE}" ]] || "${SCRIPT_DIR}/install.sh"
@@ -26,13 +27,29 @@ python3 "${SCRIPT_DIR}/repair-codicon-font.py" \
 scale_factor="$(detect_system_scale_factor)"
 wine_dpi="$(scale_factor_to_wine_dpi "${scale_factor}")"
 launch_args=("$@")
+mapfile -t compatibility_args < <(electron_compatibility_args "${launch_args[@]}")
+launch_args=("${compatibility_args[@]}" "${launch_args[@]}")
 has_scale_argument=0
+has_gpu_compositing_argument=0
 for argument in "${launch_args[@]}"; do
     if [[ "${argument}" == --force-device-scale-factor=* ]]; then
         has_scale_argument=1
-        break
     fi
+    case "${argument}" in
+        --disable-gpu|--disable-gpu=*|--disable-gpu-compositing|--enable-gpu-compositing)
+            has_gpu_compositing_argument=1
+            ;;
+    esac
 done
+if [[ "${WECHAT_DEVTOOLS_GPU_COMPOSITING:-software}" == software ]] && \
+   (( ! has_gpu_compositing_argument )); then
+    launch_args=("--disable-gpu-compositing" "${launch_args[@]}")
+elif [[ "${WECHAT_DEVTOOLS_GPU_COMPOSITING:-software}" != hardware ]] && \
+     [[ "${WECHAT_DEVTOOLS_GPU_COMPOSITING:-software}" != software ]]; then
+    printf '无效的 GPU 合成模式：%s（允许 software 或 hardware）\n' \
+        "${WECHAT_DEVTOOLS_GPU_COMPOSITING}" >&2
+    exit 64
+fi
 if (( ! has_scale_argument )); then
     launch_args=("--force-device-scale-factor=${scale_factor}" "${launch_args[@]}")
 fi

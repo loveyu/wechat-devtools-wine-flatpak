@@ -2,11 +2,18 @@
 
 set -Eeuo pipefail
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+
 wineboot --update
 winecfg -v win10
+wine reg.exe add 'HKCU\Software\Wine\X11 Driver' \
+    /v FileDialogPortal /t REG_SZ /d auto /f
 wine reg.exe add 'HKCU\Software\Wine\X11 Driver' /v UseXIM /t REG_SZ /d Y /f
 wine reg.exe add 'HKCU\Software\Wine\X11 Driver' /v InputStyle /t REG_SZ /d overthespot /f
-wine reg.exe add 'HKCU\Software\Wine\X11 Driver' /v Decorated /t REG_SZ /d Y /f
+# Electron creates auxiliary windows such as “真机调试” as if they were
+# frameless, but Wine otherwise asks KWin for a second system title bar. The
+# extra non-client area overlaps the app layout when the window is maximized.
+wine reg.exe add 'HKCU\Software\Wine\X11 Driver' /v Decorated /t REG_SZ /d N /f
 wine reg.exe add 'HKCU\Software\Wine\X11 Driver' /v Managed /t REG_SZ /d Y /f
 
 font_family=''
@@ -29,4 +36,9 @@ if [[ -n "${font_family}" ]]; then
             /v "${font_name}" /t REG_SZ /d "${font_family}" /f
     done
 fi
+
+if [[ -x /app/bin/wechat-devtools-host-open ]]; then
+    "${SCRIPT_DIR}/configure-host-file-open.sh"
+fi
+wineserver --kill
 wineserver --wait
